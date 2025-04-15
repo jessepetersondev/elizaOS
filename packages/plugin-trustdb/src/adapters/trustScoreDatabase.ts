@@ -146,6 +146,33 @@ interface Transaction {
     timestamp: string;
 }
 
+// Add new interface for Airdrops
+export interface Airdrop {
+    id: string;
+    name: string;
+    projectUrl?: string;
+    signupUrl?: string;
+    description?: string;
+    rewardAmount?: number;
+    rewardToken?: string;
+    startDate: Date;
+    endDate?: Date;
+    requirements?: string[];
+    status: AirdropStatus;
+    lastChecked: Date;
+    lastSignupAttempt?: Date;
+    signupSuccess?: boolean;
+    walletAddress?: string;
+}
+
+export enum AirdropStatus {
+    ACTIVE = 'active',
+    PENDING = 'pending',
+    COMPLETED = 'completed',
+    CLAIMED = 'claimed',
+    FAILED = 'failed'
+}
+
 export class TrustScoreDatabase {
     private db: Database;
 
@@ -155,10 +182,10 @@ export class TrustScoreDatabase {
         // check if the tables exist, if not create them
         const tables = this.db
             .prepare(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('recommenders', 'recommender_metrics', 'token_performance', 'token_recommendations', 'recommender_metrics_history');"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('recommenders', 'recommender_metrics', 'token_performance', 'token_recommendations', 'recommender_metrics_history', 'airdrops');"
             )
             .all();
-        if (tables.length !== 5) {
+        if (tables.length !== 6) {  // Updated count to include airdrops table
             this.initializeSchema();
         }
     }
@@ -349,6 +376,27 @@ export class TrustScoreDatabase {
             FOREIGN KEY (token_address) REFERENCES token_performance(token_address) ON DELETE CASCADE
         );
     `);
+
+        // Create Airdrops Table
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS airdrops (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                project_url TEXT,
+                signup_url TEXT,
+                description TEXT,
+                reward_amount REAL,
+                reward_token TEXT,
+                start_date TEXT NOT NULL,
+                end_date TEXT,
+                requirements TEXT,
+                status TEXT NOT NULL,
+                last_checked TEXT NOT NULL,
+                last_signup_attempt TEXT,
+                signup_success INTEGER DEFAULT 0,
+                wallet_address TEXT
+            );
+        `);
     }
 
     /**
@@ -1515,6 +1563,320 @@ export class TrustScoreDatabase {
                 console.error("Error executing trade query:", error);
                 return [];
             }
+    }
+
+    // ----- Airdrop Methods -----
+
+    /**
+     * Adds or updates an airdrop in the database
+     * @param airdrop The airdrop to save
+     * @returns boolean indicating success
+     */
+    saveAirdrop(airdrop: Airdrop): boolean {
+        try {
+            const sql = `
+                INSERT INTO airdrops (
+                    id, name, project_url, signup_url, description, reward_amount,
+                    reward_token, start_date, end_date, requirements, status,
+                    last_checked, last_signup_attempt, signup_success, wallet_address
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    project_url = excluded.project_url,
+                    signup_url = excluded.signup_url,
+                    description = excluded.description,
+                    reward_amount = excluded.reward_amount,
+                    reward_token = excluded.reward_token,
+                    start_date = excluded.start_date,
+                    end_date = excluded.end_date,
+                    requirements = excluded.requirements,
+                    status = excluded.status,
+                    last_checked = excluded.last_checked,
+                    last_signup_attempt = CASE
+                        WHEN excluded.last_signup_attempt IS NOT NULL THEN excluded.last_signup_attempt
+                        ELSE airdrops.last_signup_attempt
+                    END,
+                    signup_success = CASE
+                        WHEN excluded.signup_success != 0 THEN excluded.signup_success
+                        ELSE airdrops.signup_success
+                    END,
+                    wallet_address = CASE
+                        WHEN excluded.wallet_address IS NOT NULL THEN excluded.wallet_address
+                        ELSE airdrops.wallet_address
+                    END
+            `;
+
+            this.db.prepare(sql).run(
+                airdrop.id,
+                airdrop.name,
+                airdrop.projectUrl || null,
+                airdrop.signupUrl || null,
+                airdrop.description || null,
+                airdrop.rewardAmount || null,
+                airdrop.rewardToken || null,
+                airdrop.startDate.toISOString(),
+                airdrop.endDate ? airdrop.endDate.toISOString() : null,
+                airdrop.requirements ? JSON.stringify(airdrop.requirements) : null,
+                airdrop.status,
+                airdrop.lastChecked.toISOString(),
+                airdrop.lastSignupAttempt ? airdrop.lastSignupAttempt.toISOString() : null,
+                airdrop.signupSuccess ? 1 : 0,
+                airdrop.walletAddress || null
+            );
+
+            return true;
+        } catch (error) {
+            console.error("Error saving airdrop:", error);
+            return false;
+        }
+    }
+
+    /**
+     * Retrieves all airdrops from the database
+     * @returns Array of Airdrop objects
+     */
+    getAllAirdrops(): Airdrop[] {
+        try {
+            const sql = `SELECT * FROM airdrops`;
+            const rows = this.db.prepare(sql).all() as any[];
+
+            return rows.map(row => this.mapRowToAirdrop(row));
+        } catch (error) {
+            console.error("Error getting all airdrops:", error);
+            return [];
+        }
+    }
+
+    /**
+     * Get airdrop by ID
+     * @param id The ID of the airdrop
+     * @returns Airdrop object or null if not found
+     */
+    getAirdropById(id: string): Airdrop | null {
+        try {
+            const sql = `SELECT * FROM airdrops WHERE id = ?`;
+            const row = this.db.prepare(sql).get(id) as any;
+
+            if (!row) {
+                return null;
+            }
+
+            return this.mapRowToAirdrop(row);
+        } catch (error) {
+            console.error(`Error getting airdrop with ID ${id}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Get airdrops by status
+     * @param status The status to filter by
+     * @returns Array of Airdrop objects
+     */
+    getAirdropsByStatus(status: AirdropStatus): Airdrop[] {
+        try {
+            const sql = `SELECT * FROM airdrops WHERE status = ?`;
+            const rows = this.db.prepare(sql).all(status) as any[];
+
+            return rows.map(row => this.mapRowToAirdrop(row));
+        } catch (error) {
+            console.error(`Error getting airdrops with status ${status}:`, error);
+            return [];
+        }
+    }
+
+    /**
+     * Get pending airdrops (active but not yet signed up for)
+     * @returns Array of Airdrop objects
+     */
+    getPendingAirdrops(): Airdrop[] {
+        try {
+            const sql = `
+                SELECT * FROM airdrops
+                WHERE status = ?
+                AND (signup_success = 0 OR signup_success IS NULL)
+            `;
+            const rows = this.db.prepare(sql).all(AirdropStatus.ACTIVE) as any[];
+
+            return rows.map(row => this.mapRowToAirdrop(row));
+        } catch (error) {
+            console.error("Error getting pending airdrops:", error);
+            return [];
+        }
+    }
+
+    /**
+     * Update airdrop status
+     * @param id The ID of the airdrop
+     * @param status The new status
+     * @returns boolean indicating success
+     */
+    updateAirdropStatus(id: string, status: AirdropStatus): boolean {
+        try {
+            const sql = `
+                UPDATE airdrops
+                SET status = ?,
+                    last_checked = ?
+                WHERE id = ?
+            `;
+
+            const result = this.db.prepare(sql).run(
+                status,
+                new Date().toISOString(),
+                id
+            );
+
+            return result.changes > 0;
+        } catch (error) {
+            console.error(`Error updating status for airdrop ${id}:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Update airdrop signup status
+     * @param id The ID of the airdrop
+     * @param success Whether the signup was successful
+     * @param walletAddress The wallet address used for signup
+     * @returns boolean indicating success
+     */
+    updateAirdropSignupStatus(id: string, success: boolean, walletAddress: string): boolean {
+        try {
+            const sql = `
+                UPDATE airdrops
+                SET signup_success = ?,
+                    last_signup_attempt = ?,
+                    wallet_address = ?,
+                    status = CASE
+                        WHEN ? = 1 THEN '${AirdropStatus.PENDING}'
+                        ELSE status
+                    END
+                WHERE id = ?
+            `;
+
+            const result = this.db.prepare(sql).run(
+                success ? 1 : 0,
+                new Date().toISOString(),
+                walletAddress,
+                success ? 1 : 0,
+                id
+            );
+
+            return result.changes > 0;
+        } catch (error) {
+            console.error(`Error updating signup status for airdrop ${id}:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Delete an airdrop
+     * @param id The ID of the airdrop
+     * @returns boolean indicating success
+     */
+    deleteAirdrop(id: string): boolean {
+        try {
+            const sql = `DELETE FROM airdrops WHERE id = ?`;
+            const result = this.db.prepare(sql).run(id);
+
+            return result.changes > 0;
+        } catch (error) {
+            console.error(`Error deleting airdrop ${id}:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Check if a particular airdrop exists
+     * @param id The ID of the airdrop
+     * @returns boolean indicating if the airdrop exists
+     */
+    airdropExists(id: string): boolean {
+        try {
+            const sql = `SELECT COUNT(*) as count FROM airdrops WHERE id = ?`;
+            const result = this.db.prepare(sql).get(id) as { count: number };
+
+            return result.count > 0;
+        } catch (error) {
+            console.error(`Error checking if airdrop ${id} exists:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Get airdrops by date range
+     * @param startDate Start date
+     * @param endDate End date
+     * @returns Array of Airdrop objects
+     */
+    getAirdropsByDateRange(startDate: Date, endDate: Date): Airdrop[] {
+        try {
+            const sql = `
+                SELECT * FROM airdrops
+                WHERE start_date BETWEEN ? AND ?
+                OR end_date BETWEEN ? AND ?
+            `;
+            const rows = this.db.prepare(sql).all(
+                startDate.toISOString(),
+                endDate.toISOString(),
+                startDate.toISOString(),
+                endDate.toISOString()
+            ) as any[];
+
+            return rows.map(row => this.mapRowToAirdrop(row));
+        } catch (error) {
+            console.error("Error getting airdrops by date range:", error);
+            return [];
+        }
+    }
+
+    /**
+     * Get claimed airdrops for a specific wallet
+     * @param walletAddress The wallet address
+     * @returns Array of Airdrop objects
+     */
+    getClaimedAirdropsByWallet(walletAddress: string): Airdrop[] {
+        try {
+            const sql = `
+                SELECT * FROM airdrops
+                WHERE wallet_address = ?
+                AND status = ?
+            `;
+            const rows = this.db.prepare(sql).all(
+                walletAddress,
+                AirdropStatus.CLAIMED
+            ) as any[];
+
+            return rows.map(row => this.mapRowToAirdrop(row));
+        } catch (error) {
+            console.error(`Error getting claimed airdrops for wallet ${walletAddress}:`, error);
+            return [];
+        }
+    }
+
+    /**
+     * Helper method to map database row to Airdrop object
+     * @param row Database row
+     * @returns Airdrop object
+     */
+    private mapRowToAirdrop(row: any): Airdrop {
+        return {
+            id: row.id,
+            name: row.name,
+            projectUrl: row.project_url,
+            signupUrl: row.signup_url,
+            description: row.description,
+            rewardAmount: row.reward_amount,
+            rewardToken: row.reward_token,
+            startDate: new Date(row.start_date),
+            endDate: row.end_date ? new Date(row.end_date) : undefined,
+            requirements: row.requirements ? JSON.parse(row.requirements) : undefined,
+            status: row.status as AirdropStatus,
+            lastChecked: new Date(row.last_checked),
+            lastSignupAttempt: row.last_signup_attempt ? new Date(row.last_signup_attempt) : undefined,
+            signupSuccess: row.signup_success === 1,
+            walletAddress: row.wallet_address
+        };
     }
 
     /**

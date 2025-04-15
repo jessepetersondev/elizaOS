@@ -6,49 +6,49 @@ import { imageGeneration  } from "@elizaos/plugin-image-generation";
 import fs from "fs";
 
 export const TwitterConfigSchema = z.object({
-  enabled: z.boolean(),
-  username: z.string().min(1),
-  dryRun: z.boolean().optional().default(false),
-  apiKey: z.string().optional(),
+    enabled: z.boolean(),
+    username: z.string().min(1),
+    dryRun: z.boolean().optional().default(false),
+    apiKey: z.string().optional(),
 });
 
 export interface TradeAlert {
-  token: string;
-  amount: number;
-  trustScore: number;
-  riskLevel: "LOW" | "MEDIUM" | "HIGH";
-  marketData: {
-    priceChange24h: number;
-    volume24h: number;
-    liquidity: {
-      usd: number;
+    token: string;
+    amount: number;
+    trustScore: number;
+    riskLevel: "LOW" | "MEDIUM" | "HIGH";
+    marketData: {
+        priceChange24h: number;
+        volume24h: number;
+        liquidity: {
+        usd: number;
+        };
     };
-  };
-  timestamp: number;
-  signature?: string;
-  action?: "BUY" | "SELL" | "WAIT" | "SKIP";
-  reason?: string;
-  price?: number;
-  profitPercent?: string;
-  profitUsd?: string;
+    timestamp: number;
+    signature?: string;
+    action?: "BUY" | "SELL" | "WAIT" | "SKIP";
+    reason?: string;
+    price?: number;
+    profitPercent?: string;
+    profitUsd?: string;
 }
 
 export interface TradeBuyAlert {
-  token: string;
-  tokenAddress: string;
-  amount: number;
-  trustScore: number;
-  riskLevel: "LOW" | "MEDIUM" | "HIGH";
-  marketData: MarketData;
-  timestamp: number;
-  signature?: string;
-  hash?: string;
-  explorerUrl?: string;
-  action?: "BUY" | "SELL" | "WAIT" | "SKIP";
-  reason?: string;
-  price?: number;
-  profitPercent?: string;
-  profitUsd?: string;
+    token: string;
+    tokenAddress: string;
+    amount: number;
+    trustScore: number;
+    riskLevel: "LOW" | "MEDIUM" | "HIGH";
+    marketData: MarketData;
+    timestamp: number;
+    signature?: string;
+    hash?: string;
+    explorerUrl?: string;
+    action?: "BUY" | "SELL" | "WAIT" | "SKIP";
+    reason?: string;
+    price?: number;
+    profitPercent?: string;
+    profitUsd?: string;
 }
 
 export interface NFTAlert {
@@ -57,7 +57,15 @@ export interface NFTAlert {
     price: number;
     profit?: number;
     mintAddress?: string;
-  }
+}
+
+export interface BitcoinBlockData {
+    height: number;
+    hash: string;
+    time: string;
+    transactions: number;
+    previous: string;
+}
 
 /**
  * Tweet about a trade transaction with available data from trade transaction
@@ -94,6 +102,48 @@ export const tweetTrade = async (
         );
       }
 };
+
+/**
+ * Creates and tweets about a newly mined Bitcoin block
+ * @param twitterService - Twitter service for posting
+ * @param blockData - Data about the mined Bitcoin block
+ * @returns Success status of the tweet
+ */
+export async function tweetBitcoinBlock(
+    twitterService: any,
+    blockData: BitcoinBlockData
+  ) {
+    try {
+      // Format the tweet message
+      const tweetMessage = `🔶 #Bitcoin Block ${blockData.height} Mined! 🔶
+        Hash: ${blockData.hash}
+        ⏰ ${blockData.time}
+        📊 ${blockData.transactions} transactions
+        🔗 https://mempool.space/block/${blockData.hash}
+        #BTC #Blockchain #Mining`;
+
+      // Log tweet information
+      elizaLogger.logBitcoin("Tweeting about new Bitcoin block:", {
+        height: blockData.height,
+        hash: blockData.hash.substring(0, 10) + "...",
+        transactions: blockData.transactions
+      });
+
+      // Post the tweet
+      const success = await twitterService.tweetGeneric(tweetMessage);
+
+      if (success) {
+        elizaLogger.logBitcoin(`Successfully tweeted about Bitcoin block #${blockData.height}`);
+      } else {
+        elizaLogger.error(`Failed to tweet about Bitcoin block #${blockData.height}`);
+      }
+
+      return success;
+    } catch (error) {
+      elizaLogger.error("Error tweeting Bitcoin block:", error);
+      return false;
+      }
+  }
 
 /**
  * Tweet about a sell transaction with available data from sell transaction

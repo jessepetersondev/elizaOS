@@ -226,6 +226,15 @@ class ElizaLogger {
         });
     }
 
+    logBitcoin(...strings) {
+        this.#logWithStyle(strings, {
+            fg: "#FF4500",
+            bg: "",
+            icon: "\u25ce",
+            groupTitle: ` ${this.logsTitle}`,
+        });
+    }
+
     warn(...strings) {
         this.#logWithStyle(strings, {
             fg: "yellow",

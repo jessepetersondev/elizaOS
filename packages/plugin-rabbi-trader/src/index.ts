@@ -52,6 +52,8 @@ import { FreqtradeManager } from "./services/freqtrade";
 import { imageGenerationPlugin } from "@elizaos/plugin-image-generation";
 //import { DiscordConfig, DiscordService } from "./services/discord";
 import { sendDiscordMessage as sendDiscordMessageToChannel } from "./services/discord";
+import { checkForLatestMinedBlocks } from "./services/bitcoin-blocks";
+import { createNftFromImage } from "./services/solanaNft";
 
 let ACTIVE_MONITORING_INTERVAL = 20 * 1000;  // 20 seconds
 let walletProvider: ExtendedWalletProvider;
@@ -1782,6 +1784,7 @@ export async function createTinyCoinTraderPlugin(
         // Then start trading loop if enabled
         if (!settings.ENABLE_TRADING) return;
 
+
         (async () => {
             try {
                 elizaLogger.log("Initializing Solana trading loop...");
@@ -1794,6 +1797,7 @@ export async function createTinyCoinTraderPlugin(
             }
         })();
 
+        /*
         (async () => {
             try {
                 elizaLogger.log("Initializing FreqTrade system...");
@@ -1804,6 +1808,7 @@ export async function createTinyCoinTraderPlugin(
                 elizaLogger.error("FreqTrade initialization failed:", error);
             }
         })();
+        */
 
         (async () => {
             try {
@@ -1813,6 +1818,18 @@ export async function createTinyCoinTraderPlugin(
                 elizaLogger.log("Position monitoring initialization and scheduling complete");
             } catch (error) {
                 elizaLogger.error("Position monitoring initialization failed:", error);
+                // Failure here won't block other systems
+            }
+        })();
+
+        (async () => {
+            try {
+                elizaLogger.logBitcoin("Initializing Bitcoin block monitoring system...");
+                await checkForLatestMinedBlocks(twitterService);
+                setInterval(() => checkForLatestMinedBlocks(twitterService), 360000); // 6 minutes = 360,000 ms
+                elizaLogger.logBitcoin("Bitcoin block monitoring initialization and scheduling complete");
+            } catch (error) {
+                elizaLogger.error("Bitcoin block monitoring initialization failed:", error);
                 // Failure here won't block other systems
             }
         })();
@@ -1873,24 +1890,36 @@ export async function createTinyCoinTraderPlugin(
                         return false;
                     }
 
-                    // Mint the NFT using the plugin-solana-nft plugin
+                    /*
+                    // Mint the NFT
                     elizaLogger.logColorfulForSolanaNFT("Minting NFT...");
-                    await createNftWithExistingImage(connection, keypair, imagePath, `Tiny-Coin-Trader-${runtime.agentId}`, "Tiny Coin Trader is a trading bot that scans the markets 24/7 for the best opportunities!", "TCT");
+                    try {
+                        await createNftFromImage(
+                            runtime?.getSetting("WALLET_PRIVATE_KEY"),
+                            imagePath,
+                            "Tiny Coin Trader",
+                            "Tiny Coin Trader is a trading bot that scans the markets 24/7 for the best opportunities!",
+                            "TCT",
+                            [
+                                { trait_type: 'Speed', value: 'Quick' },
+                            ],
+                            connection
+                        );
+                        elizaLogger.logColorfulForSolanaNFT("NFT minted successfully");
+                    } catch (error) {
+                        elizaLogger.error("Failed to mint NFT:", error);
+                        // Continue with the rest of the process even if NFT minting fails
+                    }
+                    setInterval(() => createNftFromImage(runtime?.getSetting("WALLET_PRIVATE_KEY"), imagePath, "Tiny Coin Trader", "Tiny Coin Trader is a trading bot that scans the markets 24/7 for the best opportunities!", "TCT", [
+                            { trait_type: 'Speed', value: 'Quick' },
+                        ]
+                    ), 43200000);
                     elizaLogger.logColorfulForSolanaNFT("NFT minted successfully");
+                    */
 
-                    //Upload image to Arweave
-                    //elizaLogger.logColorful("Uploading image to Arweave...");
-                    //const arweaveUri = await uploadToArweave(imagePath, "Tiny Coin Trader", "TCT", "Tiny Coin Trader is a trading bot that scans the markets 24/7 for the best opportunities!");
-                    /*if (!arweaveUri) {
-                        elizaLogger.error("Failed to upload image to Arweave for NFT minting");
-                    }else{
-                        //Mint NFT
-                        elizaLogger.logColorful("Minting NFT...");
-                        await mintSolanaNFT(runtime, "Tiny Coin Trader", arweaveUri);
-                        elizaLogger.logColorful("NFT minted successfully");
-                    }*/
-
+                    // Tweet the image
                     // Set up interval for tweeting every 12 hours (43,200,000 ms)
+                    elizaLogger.logColorfulForSolanaNFT("Tweeting image...");
                     //await tweetBrandingImage(imageUrl, twitterService, runtime);
                     //setInterval(() => tweetBrandingImage(imageUrl, twitterService, runtime), 43200000);
                     //elizaLogger.logColorful("Scheduled branding image tweets every 12 hours");
@@ -1938,7 +1967,7 @@ export async function createTinyCoinTraderPlugin(
  */
 async function fetchPumpFunTokensFromAirtable(runtime?: IAgentRuntime) {
     try {
-        const airtableBase: Airtable.Base = new Airtable({ apiKey: 'patqtbUoOEHJ2ZqX2.64c5794ec2f6d20e65c8667290e70f445eb0f70676ebb256391d9045b6ebc1a0' }).base('appmbM11KReO4FJfW');
+        const airtableBase: Airtable.Base = new Airtable({ apiKey: runtime?.getSetting("AIRTABLE_API_KEY") }).base(runtime?.getSetting("AIRTABLE_BASE_ID"));
 
         // Get tokens from first view
         const newCoins = await airtableBase('PumpFunNewTokens')
@@ -1977,7 +2006,7 @@ async function fetchPumpFunTokensFromAirtable(runtime?: IAgentRuntime) {
  */
 async function fetchBoughtAndHoldingPumpFunTokensFromAirtable(runtime?: IAgentRuntime) {
     try {
-        const airtableBase: Airtable.Base = new Airtable({ apiKey: 'patqtbUoOEHJ2ZqX2.64c5794ec2f6d20e65c8667290e70f445eb0f70676ebb256391d9045b6ebc1a0' }).base('appmbM11KReO4FJfW');
+        const airtableBase: Airtable.Base = new Airtable({ apiKey: runtime?.getSetting("AIRTABLE_API_KEY") }).base(runtime?.getSetting("AIRTABLE_BASE_ID"));
 
         // Get tokens from first view
         const boughtAndHoldingCoins = await airtableBase('PumpFunNewTokens')

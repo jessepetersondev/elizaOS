@@ -2,6 +2,8 @@ import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { elizaLogger } from '@elizaos/core';
+import bs58 from 'bs58';
+
 
 // Import directly from @metaplex-foundation/js for backward compatibility
 import {
@@ -19,10 +21,16 @@ import { keypairIdentity as umiKeypairIdentity } from "@metaplex-foundation/umi"
 import { createGenericFile } from "@metaplex-foundation/umi";
 import { irysUploader } from "@metaplex-foundation/umi-uploader-irys";
 
+// Static Solana keypair for NFT creation
+// This is just a placeholder - replace with your actual keypair or load from environment
+const STATIC_SOLANA_KEYPAIR = Keypair.fromSecretKey(
+  bs58.decode(process.env.SOLANA_PRIVATE_KEY || '')
+);
+
 /**
  * Creates an NFT with an existing image file
  * @param connection - Solana connection
- * @param payer - Keypair of the payer/creator
+ * @param payer - Optional keypair of the payer/creator - defaults to static keypair if not provided
  * @param imagePath - Path to the image file
  * @param name - Name of the NFT
  * @param description - Description of the NFT
@@ -31,16 +39,19 @@ import { irysUploader } from "@metaplex-foundation/umi-uploader-irys";
  */
 export async function createNftWithExistingImage(
   connection: Connection,
-  payer: Keypair,
+  payer: Keypair | null = null,
   imagePath: string,
   name: string,
   description: string,
   symbol: string
 ) {
   try {
+    // Use provided keypair or fall back to static keypair
+    const usedKeypair = payer || STATIC_SOLANA_KEYPAIR;
+
     // Create Metaplex instance with the payer identity and configure bundlr for storage
     const metaplex = Metaplex.make(connection)
-      .use(keypairIdentity(payer))
+      .use(keypairIdentity(usedKeypair))
       .use(bundlrStorage({
         address: 'https://node1.bundlr.network',
         providerUrl: connection.rpcEndpoint,
@@ -187,18 +198,18 @@ export async function updateNft(
     elizaLogger.logColorful("NFT updated successfully!");
     elizaLogger.logColorful(`Updated NFT: https://explorer.solana.com/address/${nft.address.toString()}?cluster=mainnet`);
 
-    return {
+        return {
       address: nft.address.toString(),
       name: newName,
       uri: metadataUri,
-    };
-  } catch (error) {
+        };
+        } catch (error) {
     elizaLogger.error("Error updating NFT:", error);
     throw new Error(`Failed to update NFT: ${error.message || error}`);
-  }
-}
+        }
+    }
 
-/**
+    /**
  * Uploads metadata for an NFT
  * @param connection - Solana connection
  * @param payer - Keypair of the authority/updater
@@ -249,13 +260,13 @@ export async function uploadNftMetadata(
 
     elizaLogger.logColorful("Metadata uploaded: " + uri);
     return uri;
-  } catch (error) {
+        } catch (error) {
     elizaLogger.error("Error uploading metadata:", error);
     throw new Error(`Failed to upload metadata: ${error.message || error}`);
-  }
-}
+        }
+    }
 
-/**
+    /**
  * Complete process to update an NFT's metadata
  * @param connection - Solana connection
  * @param payer - Keypair of the authority/updater
@@ -394,7 +405,7 @@ export async function createNftCollection(
       name,
       symbol
     };
-  } catch (error) {
+        } catch (error) {
     elizaLogger.error("Error creating NFT collection:", error);
     throw new Error(`Failed to create NFT collection: ${error.message || error}`);
   }
@@ -497,5 +508,5 @@ export async function uploadMetadataWithUmi(
   } catch (error) {
     elizaLogger.error("Error uploading metadata with Umi:", error);
     throw new Error(`Failed to upload metadata with Umi: ${error.message || error}`);
-  }
+    }
 }

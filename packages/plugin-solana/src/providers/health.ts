@@ -88,7 +88,7 @@ export class HealthProvider implements Provider {
     private async checkRpcLatency(): Promise<number> {
         const start = Date.now();
         try {
-            await this.connection.getRecentBlockhash();
+            await this.connection.getLatestBlockhash();
             return Date.now() - start;
         } catch (error) {
             elizaLogger.error("Error checking RPC latency:", error);

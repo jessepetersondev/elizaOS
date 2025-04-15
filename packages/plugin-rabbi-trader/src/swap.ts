@@ -28,7 +28,7 @@ export async function executeSwap(
   tx.add(swapIx);
 
   // Get recent blockhash
-  const { blockhash } = await connection.getRecentBlockhash();
+  const { blockhash } = await connection.getLatestBlockhash();
   tx.recentBlockhash = blockhash;
   tx.feePayer = walletPubkey;
 
